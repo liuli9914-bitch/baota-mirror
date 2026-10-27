@@ -1,0 +1,7 @@
+/dist/
+/mirror/
+/original/
+/manifest.json
+/install_bundle.sh
+/install_mirror.sh
+/download-assets.ps1

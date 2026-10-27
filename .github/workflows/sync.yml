@@ -1,0 +1,66 @@
+name: Sync io.bt.sb assets
+
+on:
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-io-bt-assets
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download and validate upstream assets
+        run: bash scripts/sync-assets.sh dist
+
+      - name: Read current release checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p previous
+          gh release download mirror-latest --pattern SHA256SUMS --dir previous || true
+
+      - name: Detect changes
+        id: changes
+        run: |
+          if [ -f previous/SHA256SUMS ] && cmp -s previous/SHA256SUMS dist/SHA256SUMS; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo 'Upstream assets are unchanged.'
+          else
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+            echo 'Upstream assets changed or the mirror release does not exist yet.'
+          fi
+
+      - name: Publish mirror release
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view mirror-latest >/dev/null 2>&1; then
+            gh release upload mirror-latest \
+              dist/public.sh \
+              dist/panel6_latest.zip \
+              dist/SHA256SUMS \
+              dist/metadata.json \
+              --clobber
+          else
+            gh release create mirror-latest \
+              dist/public.sh \
+              dist/panel6_latest.zip \
+              dist/SHA256SUMS \
+              dist/metadata.json \
+              --target "${GITHUB_SHA}" \
+              --title 'Latest io.bt.sb mirror' \
+              --notes 'Automatically mirrored from io.bt.sb. These are third-party, non-official Baota assets; inspect the checksums and metadata before use.'
+          fi
